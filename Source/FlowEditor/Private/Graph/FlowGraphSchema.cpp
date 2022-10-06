@@ -236,10 +236,22 @@ TArray<TSharedPtr<FString>> UFlowGraphSchema::GetFlowNodeCategories()
 
 UClass* UFlowGraphSchema::GetAssignedGraphNodeClass(const UClass* FlowNodeClass)
 {
-	if (UClass* AssignedGraphNode = AssignedGraphNodeClasses.FindRef(FlowNodeClass))
+	/*if (UClass* AssignedGraphNode = AssignedGraphNodeClasses.FindRef(FlowNodeClass))
 	{
 		return AssignedGraphNode;
-	}
+	}*/
+
+	for (const auto AssignedNodeClass : AssignedGraphNodeClasses)
+		{
+		if (AssignedNodeClass.Value == UFlowGraphNode::StaticClass())
+			{
+			continue;
+			}
+		if (FlowNodeClass->IsChildOf(AssignedNodeClass.Key))
+			{
+			return AssignedNodeClass.Value;
+			}
+		}
 
 	return UFlowGraphNode::StaticClass();
 }
