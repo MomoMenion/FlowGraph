@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include "FlowMessageLog.h"
 #include "FlowSave.h"
 #include "FlowTypes.h"
 #include "FlowAsset.generated.h"
@@ -24,6 +25,8 @@ class FLOW_API IFlowGraphInterface
 public:
 	IFlowGraphInterface() {}
 	virtual ~IFlowGraphInterface() {}
+
+	virtual void RefreshGraph(UFlowAsset* FlowAsset) {}
 
 	virtual void OnInputTriggered(UEdGraphNode* GraphNode, const int32 Index) const {}
 	virtual void OnOutputTriggered(UEdGraphNode* GraphNode, const int32 Index) const {}
@@ -66,8 +69,9 @@ class FLOW_API UFlowAsset : public UObject
 	static void AddReferencedObjects(UObject* InThis, FReferenceCollector& Collector);
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
 	virtual void PostDuplicate(bool bDuplicateForPIE) override;
-	virtual EDataValidationResult IsDataValid(TArray<FText>& ValidationErrors) override;
 	// --
+
+	virtual EDataValidationResult ValidateAsset(FFlowMessageLog& MessageLog);
 #endif
 
 	// IFlowGraphInterface
@@ -147,6 +151,8 @@ public:
 	TArray<FName> GetCustomInputs() const { return CustomInputs; }
 	TArray<FName> GetCustomOutputs() const { return CustomOutputs; }
 
+	UFlowNode_Start* GetStartNode() const;
+
 //////////////////////////////////////////////////////////////////////////
 // Instances of the template asset
 
@@ -157,6 +163,9 @@ private:
 
 #if WITH_EDITORONLY_DATA
 	TWeakObjectPtr<UFlowAsset> InspectedInstance;
+
+	// Message log for storing runtime errors/notes/warnings that will only last until the next game run
+	TSharedPtr<class FFlowMessageLog> RuntimeLog;
 #endif
 
 public:
@@ -176,8 +185,13 @@ public:
 	FRefreshDebuggerEvent& OnDebuggerRefresh() { return RefreshDebuggerEvent; }
 	FRefreshDebuggerEvent RefreshDebuggerEvent;
 
+	DECLARE_EVENT_TwoParams(UFlowAsset, FRuntimeMessageEvent, const UFlowAsset*, const TSharedRef<FTokenizedMessage>&);
+	FRuntimeMessageEvent& OnRuntimeMessageAdded() { return RuntimeMessageEvent; }
+	FRuntimeMessageEvent RuntimeMessageEvent;
+
 private:
-	void BroadcastDebuggerRefresh() const { RefreshDebuggerEvent.Broadcast(); }
+	void BroadcastDebuggerRefresh() const;
+	void BroadcastRuntimeMessageAdded(const UFlowAsset* AssetInstance, const TSharedRef<FTokenizedMessage>& Message) const;;
 #endif
 
 //////////////////////////////////////////////////////////////////////////
@@ -259,7 +273,7 @@ public:
 	FName GetDisplayName() const;
 
 	UFlowNode_SubGraph* GetNodeOwningThisAssetInstance() const;
-	UFlowAsset* GetMasterInstance() const;
+	UFlowAsset* GetParentInstance() const;
 
 	// Are there any active nodes?
 	UFUNCTION(BlueprintPure, Category = "Flow")
@@ -272,6 +286,12 @@ public:
 	// Returns nodes active in the past, done their work
 	UFUNCTION(BlueprintPure, Category = "Flow")
 	TArray<UFlowNode*> GetRecordedNodes() const { return RecordedNodes; }
+
+#if WITH_EDITOR
+	void LogError(const FString& MessageToLog, UFlowNode* Node) const;
+	void LogWarning(const FString& MessageToLog, UFlowNode* Node) const;
+	void LogNote(const FString& MessageToLog, UFlowNode* Node) const;
+#endif
 
 //////////////////////////////////////////////////////////////////////////
 // SaveGame

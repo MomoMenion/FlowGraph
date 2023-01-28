@@ -8,11 +8,12 @@
 #include "FlowAsset.h"
 
 class FFlowAssetEditor;
+class UToolMenu;
 
 //////////////////////////////////////////////////////////////////////////
 // Flow Asset Instance List
 
-class FLOWEDITOR_API SFlowAssetInstanceList final : public SCompoundWidget
+class FLOWEDITOR_API SFlowAssetInstanceList : public SCompoundWidget
 {
 public:
 	SLATE_BEGIN_ARGS(SFlowAssetInstanceList) {}
@@ -59,7 +60,7 @@ struct FLOWEDITOR_API FFlowBreadcrumb
 	{}
 };
 
-class FLOWEDITOR_API SFlowAssetBreadcrumb final : public SCompoundWidget
+class FLOWEDITOR_API SFlowAssetBreadcrumb : public SCompoundWidget
 {
 public:
 	SLATE_BEGIN_ARGS(SFlowAssetInstanceList) {}
@@ -69,7 +70,6 @@ public:
 
 private:
 	void OnCrumbClicked(const FFlowBreadcrumb& Item) const;
-	FText GetBreadcrumbText(const TWeakObjectPtr<UFlowAsset> FlowInstance) const;
 
 	TWeakObjectPtr<UFlowAsset> TemplateAsset;
 	TSharedPtr<SBreadcrumbTrail<FFlowBreadcrumb>> BreadcrumbTrail;
@@ -78,16 +78,18 @@ private:
 //////////////////////////////////////////////////////////////////////////
 // Flow Asset Toolbar
 
-class FLOWEDITOR_API FFlowAssetToolbar final : public TSharedFromThis<FFlowAssetToolbar>
+class FLOWEDITOR_API FFlowAssetToolbar : public TSharedFromThis<FFlowAssetToolbar>
 {
 public:
 	explicit FFlowAssetToolbar(const TSharedPtr<FFlowAssetEditor> InAssetEditor, UToolMenu* ToolbarMenu);
 
 private:
 	void BuildAssetToolbar(UToolMenu* ToolbarMenu) const;
+	TSharedRef<SWidget> MakeDiffMenu() const;
+	
 	void BuildDebuggerToolbar(UToolMenu* ToolbarMenu);
 
-public:	
+public:
 	TSharedPtr<SFlowAssetInstanceList> GetAssetInstanceList() const { return AssetInstanceList; }
 
 private:

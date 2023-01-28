@@ -9,6 +9,9 @@
 #include "Toolkits/IToolkitHost.h"
 #include "UObject/GCObject.h"
 
+#include "FlowEditorDefines.h"
+#include "FlowTypes.h"
+
 class SFlowPalette;
 class UFlowAsset;
 class UFlowGraphNode;
@@ -30,15 +33,30 @@ protected:
 	TSharedPtr<class FFlowAssetToolbar> AssetToolbar;
 	TSharedPtr<class FFlowDebugger> FlowDebugger;
 
-	TSharedPtr<SGraphEditor> FocusedGraphEditor;
+	TSharedPtr<SGraphEditor> GraphEditor;
 	TSharedPtr<class IDetailsView> DetailsView;
 	TSharedPtr<class SFlowPalette> Palette;
+
+#if ENABLE_SEARCH_IN_ASSET_EDITOR
+	TSharedPtr<class SSearchBrowser> SearchBrowser;
+#endif
+
+	/** Runtime message log, with the log listing that it reflects */
+	TSharedPtr<class SWidget> RuntimeLog;
+	TSharedPtr<class IMessageLogListing> RuntimeLogListing;
+
+	/** Asset Validation message log, with the log listing that it reflects */
+	TSharedPtr<class SWidget> ValidationLog;
+	TSharedPtr<class IMessageLogListing> ValidationLogListing;
 
 public:
 	/**	The tab ids for all the tabs used */
 	static const FName DetailsTab;
 	static const FName GraphTab;
 	static const FName PaletteTab;
+	static const FName RuntimeLogTab;
+	static const FName SearchTab;
+	static const FName ValidationLogTab;
 
 private:
 	/** The current UI selection state of this editor */
@@ -52,6 +70,7 @@ public:
 
 	// FGCObject
 	virtual void AddReferencedObjects(FReferenceCollector& Collector) override;
+
 	virtual FString GetReferencerName() const override
 	{
 		return TEXT("FFlowAssetEditor");
@@ -81,8 +100,13 @@ public:
 
 private:
 	TSharedRef<SDockTab> SpawnTab_Details(const FSpawnTabArgs& Args) const;
-	TSharedRef<SDockTab> SpawnTab_GraphCanvas(const FSpawnTabArgs& Args) const;
+	TSharedRef<SDockTab> SpawnTab_Graph(const FSpawnTabArgs& Args) const;
 	TSharedRef<SDockTab> SpawnTab_Palette(const FSpawnTabArgs& Args) const;
+	TSharedRef<SDockTab> SpawnTab_RuntimeLog(const FSpawnTabArgs& Args) const;
+#if ENABLE_SEARCH_IN_ASSET_EDITOR
+	TSharedRef<SDockTab> SpawnTab_Search(const FSpawnTabArgs& Args) const;
+#endif
+	TSharedRef<SDockTab> SpawnTab_ValidationLog(const FSpawnTabArgs& Args) const;
 
 public:
 	/** Edits the specified FlowAsset object */
@@ -90,11 +114,16 @@ public:
 
 protected:
 	virtual void CreateToolbar();
-
 	virtual void BindToolbarCommands();
+	
 	virtual void RefreshAsset();
-	virtual void GoToMasterInstance();
-	virtual bool CanGoToMasterInstance();
+
+#if ENABLE_SEARCH_IN_ASSET_EDITOR
+	virtual void SearchInAsset();
+#endif
+
+	virtual void GoToParentInstance();
+	virtual bool CanGoToParentInstance();
 
 	virtual void CreateWidgets();
 
@@ -126,6 +155,8 @@ public:
 	static bool IsPIE();
 	static EVisibility GetDebuggerVisibility();
 
+	void OnBeginPIE(const bool bInSimulateInEditor) const;
+
 	TSet<UFlowGraphNode*> GetSelectedFlowNodes() const;
 	int32 GetNumberOfSelectedNodes() const;
 	bool GetBoundsForSelectedNodes(class FSlateRect& Rect, float Padding) const;
@@ -136,7 +167,16 @@ protected:
 public:
 	virtual void SelectSingleNode(UEdGraphNode* Node) const;
 
+#if ENABLE_JUMP_TO_INNER_OBJECT
+	// FAssetEditorToolkit
+	virtual void JumpToInnerObject(UObject* InnerObject) override;
+	// --
+#endif
+
 protected:
+	void OnRuntimeMessageAdded(const UFlowAsset* AssetInstance, const TSharedRef<FTokenizedMessage>& Message) const;
+	void OnLogTokenClicked(const TSharedRef<class IMessageToken>& Token) const;
+	
 	virtual void SelectAllNodes() const;
 	virtual bool CanSelectAllNodes() const;
 
@@ -206,8 +246,11 @@ private:
 	bool CanToggleBreakpoint() const;
 	bool CanTogglePinBreakpoint() const;
 
+	void SetSignalMode(const EFlowSignalMode Mode) const;
+	bool CanSetSignalMode(const EFlowSignalMode Mode) const;
+
 	void OnForcePinActivation() const;
-	
+
 	void FocusViewport() const;
 	bool CanFocusViewport() const;
 

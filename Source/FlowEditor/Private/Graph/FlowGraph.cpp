@@ -2,9 +2,17 @@
 
 #include "Graph/FlowGraph.h"
 #include "Graph/FlowGraphSchema.h"
+#include "Graph/FlowGraphSchema_Actions.h"
 #include "Graph/Nodes/FlowGraphNode.h"
 
+#include "Nodes/FlowNode.h"
+
 #include "Kismet2/BlueprintEditorUtils.h"
+
+void FFlowGraphInterface::RefreshGraph(UFlowAsset* FlowAsset)
+{
+	CastChecked<UFlowGraph>(FlowAsset->GetGraph())->RefreshGraph();
+}
 
 void FFlowGraphInterface::OnInputTriggered(UEdGraphNode* GraphNode, const int32 Index) const
 {
@@ -27,13 +35,43 @@ UFlowGraph::UFlowGraph(const FObjectInitializer& ObjectInitializer)
 
 UEdGraph* UFlowGraph::CreateGraph(UFlowAsset* InFlowAsset)
 {
-	UFlowGraph* NewGraph = CastChecked<UFlowGraph>(FBlueprintEditorUtils::CreateNewGraph(InFlowAsset, NAME_None, StaticClass(), UFlowGraphSchema::StaticClass()));
+	UEdGraph* NewGraph = CastChecked<UFlowGraph>(FBlueprintEditorUtils::CreateNewGraph(InFlowAsset, NAME_None, StaticClass(), UFlowGraphSchema::StaticClass()));
 	NewGraph->bAllowDeletion = false;
 
 	InFlowAsset->FlowGraph = NewGraph;
 	NewGraph->GetSchema()->CreateDefaultNodesForGraph(*NewGraph);
 
 	return NewGraph;
+}
+
+void UFlowGraph::RefreshGraph()
+{
+	// don't run fixup in PIE
+	if (GEditor && !GEditor->PlayWorld)
+	{
+		// check if all Graph Nodes have expected, up-to-date type
+		CastChecked<UFlowGraphSchema>(GetSchema())->GatherNativeNodes();
+		for (const TPair<FGuid, UFlowNode*>& Node : GetFlowAsset()->GetNodes())
+		{
+			if (UFlowNode* FlowNode = Node.Value)
+			{
+				const UClass* ExpectGraphNodeClass = UFlowGraphSchema::GetAssignedGraphNodeClass(FlowNode->GetClass());
+				if (FlowNode->GetGraphNode() && FlowNode->GetGraphNode()->GetClass() != ExpectGraphNodeClass)
+				{
+					// Create a new Flow Graph Node of proper type
+					FFlowGraphSchemaAction_NewNode::RecreateNode(this, FlowNode->GetGraphNode(), FlowNode);
+				}
+			}
+		}
+
+		// refresh nodes
+		TArray<UFlowGraphNode*> FlowGraphNodes;
+		GetNodesOfClass<UFlowGraphNode>(FlowGraphNodes);
+		for (UFlowGraphNode* GraphNode : FlowGraphNodes)
+		{
+			GraphNode->OnGraphRefresh();
+		}
+	}
 }
 
 void UFlowGraph::NotifyGraphChanged()
@@ -46,5 +84,5 @@ void UFlowGraph::NotifyGraphChanged()
 
 UFlowAsset* UFlowGraph::GetFlowAsset() const
 {
-	return CastChecked<UFlowAsset>(GetOuter());
+	return GetTypedOuter<UFlowAsset>();
 }

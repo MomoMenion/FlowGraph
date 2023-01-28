@@ -5,6 +5,8 @@
 #include "AssetTypeCategories.h"
 #include "IAssetTypeActions.h"
 #include "Modules/ModuleInterface.h"
+#include "PropertyEditorDelegates.h"
+#include "Toolkits/IToolkit.h"
 
 class FSlateStyleSet;
 struct FGraphPanelPinConnectionFactory;
@@ -39,7 +41,7 @@ public:
 	FDelegateHandle ModulesChangedHandle;
 
 private:
-	void ModulesChangesCallback(FName ModuleName, EModuleChangeReason ReasonForChange);
+	void ModulesChangesCallback(FName ModuleName, EModuleChangeReason ReasonForChange) const;
 	void RegisterAssetIndexers() const;
 
 	void CreateFlowToolbar(FToolBarBuilder& ToolbarBuilder) const;

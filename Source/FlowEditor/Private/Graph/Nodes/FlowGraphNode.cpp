@@ -25,7 +25,6 @@
 #include "SourceCodeNavigation.h"
 #include "Textures/SlateIcon.h"
 #include "ToolMenuSection.h"
-#include "UnrealEd.h"
 
 #define LOCTEXT_NAMESPACE "FlowGraphNode"
 
@@ -107,9 +106,14 @@ UFlowGraphNode::UFlowGraphNode(const FObjectInitializer& ObjectInitializer)
 	OrphanedPinSaveMode = ESaveOrphanPinMode::SaveAll;
 }
 
-void UFlowGraphNode::SetFlowNode(UFlowNode* InFlowNode)
+void UFlowGraphNode::SetNodeTemplate(UFlowNode* InFlowNode)
 {
 	FlowNode = InFlowNode;
+}
+
+const UFlowNode* UFlowGraphNode::GetNodeTemplate() const
+{
+	return FlowNode;
 }
 
 UFlowNode* UFlowGraphNode::GetFlowNode() const
@@ -237,6 +241,11 @@ void UFlowGraphNode::OnExternalChange()
 
 	ReconstructNode();
 	GetGraph()->NotifyGraphChanged();
+}
+
+void UFlowGraphNode::OnGraphRefresh()
+{
+	RefreshContextPins(true);
 }
 
 bool UFlowGraphNode::CanCreateUnderSpecifiedSchema(const UEdGraphSchema* Schema) const
@@ -525,6 +534,22 @@ void UFlowGraphNode::GetNodeContextMenuActions(class UToolMenu* Menu, class UGra
 		}
 
 		{
+			FToolMenuSection& Section = Menu->AddSection("FlowGraphNodeExecutionOverride", LOCTEXT("NodeExecutionOverrideMenuHeader", "Execution Override"));
+			if (CanSetSignalMode(EFlowSignalMode::Enabled))
+			{
+				Section.AddMenuEntry(FlowGraphCommands.EnableNode);
+			}
+			if (CanSetSignalMode(EFlowSignalMode::Disabled))
+			{
+				Section.AddMenuEntry(FlowGraphCommands.DisableNode);
+			}
+			if (CanSetSignalMode(EFlowSignalMode::PassThrough))
+			{
+				Section.AddMenuEntry(FlowGraphCommands.SetPassThrough);
+			}
+		}
+
+		{
 			FToolMenuSection& Section = Menu->AddSection("FlowGraphNodeJumps", LOCTEXT("NodeJumpsMenuHeader", "Jumps"));
 			if (CanFocusViewport())
 			{
@@ -749,7 +774,7 @@ void UFlowGraphNode::CreateInputPin(const FFlowPin& FlowPin, const int32 Index /
 		NewPin->bAllowFriendlyName = true;
 		NewPin->PinFriendlyName = FlowPin.PinFriendlyName;
 	}
-	
+
 	NewPin->PinToolTip = FlowPin.PinToolTip;
 
 	InputPins.Emplace(NewPin);
@@ -808,38 +833,56 @@ bool UFlowGraphNode::CanUserAddOutput() const
 
 bool UFlowGraphNode::CanUserRemoveInput(const UEdGraphPin* Pin) const
 {
-	return FlowNode && FlowNode->InputPins.Num() > FlowNode->GetClass()->GetDefaultObject<UFlowNode>()->InputPins.Num();
+	return FlowNode && !FlowNode->GetClass()->GetDefaultObject<UFlowNode>()->InputPins.Contains(Pin->PinName);
 }
 
 bool UFlowGraphNode::CanUserRemoveOutput(const UEdGraphPin* Pin) const
 {
-	return FlowNode && FlowNode->OutputPins.Num() > FlowNode->GetClass()->GetDefaultObject<UFlowNode>()->OutputPins.Num();
+	return FlowNode && !FlowNode->GetClass()->GetDefaultObject<UFlowNode>()->OutputPins.Contains(Pin->PinName);
 }
 
 void UFlowGraphNode::AddUserInput()
 {
-	AddInstancePin(EGPD_Input, *FString::FromInt(InputPins.Num()));
+	AddInstancePin(EGPD_Input, FlowNode->CountNumberedInputs());
 }
 
 void UFlowGraphNode::AddUserOutput()
 {
-	AddInstancePin(EGPD_Output, *FString::FromInt(OutputPins.Num()));
+	AddInstancePin(EGPD_Output, FlowNode->CountNumberedOutputs());
 }
 
-void UFlowGraphNode::AddInstancePin(const EEdGraphPinDirection Direction, const FName& PinName)
+void UFlowGraphNode::AddInstancePin(const EEdGraphPinDirection Direction, const uint8 NumberedPinsAmount)
 {
 	const FScopedTransaction Transaction(LOCTEXT("AddInstancePin", "Add Instance Pin"));
 	Modify();
 
+	const FFlowPin PinName = FFlowPin(FString::FromInt(NumberedPinsAmount));
+
 	if (Direction == EGPD_Input)
 	{
-		FlowNode->InputPins.Emplace(PinName);
-		CreateInputPin(FlowNode->InputPins.Last());
+		if (FlowNode->InputPins.IsValidIndex(NumberedPinsAmount))
+		{
+			FlowNode->InputPins.Insert(PinName, NumberedPinsAmount);
+		}
+		else
+		{
+			FlowNode->InputPins.Add(PinName);
+		}
+
+		CreateInputPin(PinName, NumberedPinsAmount);
 	}
 	else
 	{
-		FlowNode->OutputPins.Emplace(PinName);
-		CreateOutputPin(FlowNode->OutputPins.Last());
+		if (FlowNode->OutputPins.IsValidIndex(NumberedPinsAmount))
+		{
+			FlowNode->OutputPins.Insert(PinName, NumberedPinsAmount);
+		}
+		else
+		{
+			FlowNode->OutputPins.Add(PinName);
+		}
+
+		CreateOutputPin(PinName, FlowNode->InputPins.Num() + NumberedPinsAmount);
 	}
 
 	GetGraph()->NotifyGraphChanged();
@@ -857,7 +900,7 @@ void UFlowGraphNode::RemoveInstancePin(UEdGraphPin* Pin)
 		if (InputPins.Contains(Pin))
 		{
 			InputPins.Remove(Pin);
-			FlowNode->RemoveUserInput();
+			FlowNode->RemoveUserInput(Pin->PinName);
 
 			Pin->MarkAsGarbage();
 			Pins.Remove(Pin);
@@ -868,7 +911,7 @@ void UFlowGraphNode::RemoveInstancePin(UEdGraphPin* Pin)
 		if (OutputPins.Contains(Pin))
 		{
 			OutputPins.Remove(Pin);
-			FlowNode->RemoveUserOutput();
+			FlowNode->RemoveUserOutput(Pin->PinName);
 
 			Pin->MarkAsGarbage();
 			Pins.Remove(Pin);
@@ -932,9 +975,17 @@ void UFlowGraphNode::GetPinHoverText(const UEdGraphPin& Pin, FString& HoverTextO
 					HoverTextOut.Append(LINE_TERMINATOR);
 					HoverTextOut.Appendf(TEXT("%d) %s"), i + 1, *PinRecords[i].HumanReadableTime);
 
-					if (PinRecords[i].bForcedActivation)
+					switch (PinRecords[i].ActivationType)
 					{
-						HoverTextOut.Append(FPinRecord::ForcedActivation);
+						case EFlowPinActivationType::Default:
+							break;
+						case EFlowPinActivationType::Forced:
+							HoverTextOut.Append(FPinRecord::ForcedActivation);
+							break;
+						case EFlowPinActivationType::PassThrough:
+							HoverTextOut.Append(FPinRecord::PassThroughActivation);
+							break;
+						default: ;
 					}
 				}
 			}
@@ -1017,14 +1068,33 @@ void UFlowGraphNode::ForcePinActivation(const FEdGraphPinReference PinReference)
 		switch (FoundPin->Direction)
 		{
 			case EGPD_Input:
-				InspectedNodeInstance->TriggerInput(FoundPin->PinName, true);
+				InspectedNodeInstance->TriggerInput(FoundPin->PinName, EFlowPinActivationType::Forced);
 				break;
 			case EGPD_Output:
-				InspectedNodeInstance->TriggerOutput(FoundPin->PinName, false, true);
+				InspectedNodeInstance->TriggerOutput(FoundPin->PinName, false, EFlowPinActivationType::Forced);
 				break;
 			default: ;
 		}
 	}
+}
+
+void UFlowGraphNode::SetSignalMode(const EFlowSignalMode Mode)
+{
+	if (FlowNode)
+	{
+		FlowNode->SignalMode = Mode;
+		OnSignalModeChanged.ExecuteIfBound();
+	}
+}
+
+EFlowSignalMode UFlowGraphNode::GetSignalMode() const
+{
+	return FlowNode ? FlowNode->SignalMode : EFlowSignalMode::Disabled;
+}
+
+bool UFlowGraphNode::CanSetSignalMode(const EFlowSignalMode Mode) const
+{
+	return FlowNode ? (FlowNode->AllowedSignalModes.Contains(Mode) && FlowNode->SignalMode != Mode) : false;
 }
 
 #undef LOCTEXT_NAMESPACE
