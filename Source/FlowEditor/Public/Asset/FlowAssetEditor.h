@@ -12,6 +12,7 @@
 #include "FlowEditorDefines.h"
 #include "FlowTypes.h"
 
+class FFlowMessageLog;
 class SFlowPalette;
 class UFlowAsset;
 class UFlowGraphNode;
@@ -27,7 +28,7 @@ struct Rect;
 class FLOWEDITOR_API FFlowAssetEditor : public FAssetEditorToolkit, public FEditorUndoClient, public FGCObject, public FNotifyHook
 {
 protected:
-	/** The FlowAsset asset being inspected */
+	/** The Flow Asset being edited */
 	UFlowAsset* FlowAsset;
 
 	TSharedPtr<class FFlowAssetToolbar> AssetToolbar;
@@ -66,7 +67,7 @@ public:
 	FFlowAssetEditor();
 	virtual ~FFlowAssetEditor() override;
 
-	UFlowAsset* GetFlowAsset() const { return FlowAsset; };
+	UFlowAsset* GetFlowAsset() const { return FlowAsset; }
 
 	// FGCObject
 	virtual void AddReferencedObjects(FReferenceCollector& Collector) override;
@@ -98,6 +99,10 @@ public:
 	virtual void UnregisterTabSpawners(const TSharedRef<class FTabManager>& TabManager) override;
 	// --
 
+	// FAssetEditorToolkit
+	virtual void InitToolMenuContext(FToolMenuContext& MenuContext) override;
+	// --
+
 private:
 	TSharedRef<SDockTab> SpawnTab_Details(const FSpawnTabArgs& Args) const;
 	TSharedRef<SDockTab> SpawnTab_Graph(const FSpawnTabArgs& Args) const;
@@ -117,6 +122,12 @@ protected:
 	virtual void BindToolbarCommands();
 	
 	virtual void RefreshAsset();
+
+private:
+	void ValidateAsset_Internal();
+
+protected:
+	virtual void ValidateAsset(FFlowMessageLog& MessageLog);
 
 #if ENABLE_SEARCH_IN_ASSET_EDITOR
 	virtual void SearchInAsset();
