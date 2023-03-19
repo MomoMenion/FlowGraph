@@ -245,7 +245,7 @@ UClass* UFlowGraphSchema::GetAssignedGraphNodeClass(const UClass* FlowNodeClass)
 		}
 	}
 
-	for (const auto AssignedNodeClass : AssignedGraphNodeClasses)
+	/*for (const auto AssignedNodeClass : AssignedGraphNodeClasses)
 		{
 		if (AssignedNodeClass.Value == UFlowGraphNode::StaticClass())
 			{
@@ -255,7 +255,7 @@ UClass* UFlowGraphSchema::GetAssignedGraphNodeClass(const UClass* FlowNodeClass)
 			{
 			return AssignedNodeClass.Value;
 			}
-		}
+		}*/
 
 	return UFlowGraphNode::StaticClass();
 }
